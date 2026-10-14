@@ -1,0 +1,28 @@
+---
+description: Anomaly hosts packs on Vulkan the same way it hosts them on DX11; dependent plugins rely on that host
+alwaysApply: true
+---
+
+# Anomaly + Vulkan matches Anomaly + DX11
+
+Anomaly is the pack host on both renderers. `Anomaly.Dx11` fulfills that host when the operational renderer is Keen DX11. SE-Vulkan's guest bus fulfills the same host when the operational renderer is Vulkan. Anomaly does not compile against either device. Packs do not compile against Anomaly. They read `ClientPlugin.Backend.RendererRoute` by reflection.
+
+Anomaly-dependent plugins — DLSS, FRS, frame generation, HDR, aurora, clouds, shadows, Final Frontier, Prism, SE-RT, and the next pack — depend on that host. The dependency has to keep working when the route is Vulkan.
+
+One shared contract: catalog names, `Fullscreen/<Slot>`, `anomaly.json`, `SetUniforms`, compose modes, and scale (1, 0.5, 0.25). `UseSharedBus` is open while the route is pending, on DX11, and on Vulkan. `UseDx11Device` is DX11 only. `UseGuestImages` is Vulkan only. A closed path is refused. Packs do not read SE-Vulkan `RequestedBackend` or `BackendRuntime`.
+
+A shared-bus capability that exists on DX11 exists on the guest bus under the same names, or the call stays refused through `RendererRoute` until Anomaly owns the gap. Device work stays in `*.Dx11.dll`. Guest work is catalog images and fullscreen packets. Managed code does not record a `VkCommandBuffer` and does not touch `MyRender11` during a Vulkan session. SE-Vulkan does not grow a second pack registry.
+
+A pack function that reads an Anomaly catalog buffer, claims a display service, or invalidates history on DX11 does the same on Vulkan. The renderer samples the guest image for that catalog name: velocity `0xFFFF00000000000A`, volumeReactive `0xFFFF00000000000B`, reactiveMask `0xFFFF00000000000C`. If the guest bus cannot publish that name yet, fill the Anomaly gap in the same turn and record it in `wiki/Framework-gaps.md`. Do not leave the Vulkan path on a renderer-private buffer while DX11 reads the catalog.
+
+```text
+# BAD
+DX11 DLSS reads catalog velocity. Vulkan DLSS samples the renderer's object-motion image and ignores FrameTemporal.InvalidateHistory.
+Pack detects Vulkan through SE-Vulkan internals and binds its own images.
+
+# GOOD
+Both backends read catalog velocity when history is valid, and both seed when InvalidateHistory clears it.
+Pack registers, sets uniforms, and publishes on the shared bus.
+DX11 device work waits for UseDx11Device; guest packets wait for UseGuestImages.
+The same slot, catalog name, and compose mode work on both backends.
+```

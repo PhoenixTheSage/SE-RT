@@ -6,6 +6,7 @@ namespace ClientPlugin.Settings.Elements;
 
 internal class Control
 {
+    public System.Action RefreshValue;
     // FIXME: This is global and not determined automatically
     public static readonly float LabelMinWidth = 0.18f;
 

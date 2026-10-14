@@ -37,6 +37,7 @@ internal class DropdownAttribute : Attribute, IElement
         Type choiceEnum = selectedEnum.GetType();
 
         var dropdown = new MyGuiControlCombobox(toolTip: Description);
+        bool refreshing = false;
         string[] elements = Enum.GetNames(choiceEnum);
 
         for (int i = 0; i < elements.Length; i++)
@@ -46,6 +47,7 @@ internal class DropdownAttribute : Attribute, IElement
 
         void OnItemSelect()
         {
+            if (refreshing) return;
             long key = dropdown.GetSelectedKey();
             string value = elements[key];
 
@@ -60,7 +62,15 @@ internal class DropdownAttribute : Attribute, IElement
         return new List<Control>()
         {
             new Control(new MyGuiControlLabel(text: label), minWidth: Control.LabelMinWidth),
-            new Control(dropdown, fillFactor: 1f),
+            new Control(dropdown, fillFactor: 1f)
+            {
+                RefreshValue = () =>
+                {
+                    refreshing = true;
+                    try { dropdown.SelectItemByIndex(Convert.ToInt32(propertyGetter())); }
+                    finally { refreshing = false; }
+                }
+            },
         };
     }
     public List<Type> SupportedTypes { get; } = new List<Type>()

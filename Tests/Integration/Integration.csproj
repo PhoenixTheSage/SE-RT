@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFrameworks>net48;net10.0</TargetFrameworks><LangVersion>14</LangVersion><PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../ClientPlugin/Config.cs" Link="Config.cs" />
+    <Compile Include="../../ClientPlugin/Settings/ConfigStorage.cs" Link="ConfigStorage.cs" />
+    <Compile Include="../../ClientPlugin/Integration/AnomalyTerminalHook.cs" Link="AnomalyTerminalHook.cs" />
+    <Compile Include="../../ClientPlugin/Rendering/RendererDiagnostics.cs" Link="RendererDiagnostics.cs" />
+    <Compile Include="../../ClientPlugin/Core/SceneData.cs" Link="SceneData.cs" />
+    <Compile Include="../../ClientPlugin/Core/ShadowSettings.cs" Link="ShadowSettings.cs" />
+    <Reference Include="System.Numerics" Condition="'$(TargetFramework)' == 'net48'" />
+  </ItemGroup>
+</Project>

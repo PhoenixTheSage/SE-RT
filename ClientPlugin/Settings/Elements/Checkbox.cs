@@ -18,14 +18,21 @@ class CheckboxAttribute : Attribute, IElement
     public List<Control> GetControls(string name, Func<object> propertyGetter, Action<object> propertySetter)
     {               
         var label = Tools.Tools.GetLabelOrDefault(name, Label);
+        bool refreshing = false;
+        var checkbox = new MyGuiControlCheckbox(toolTip: Description) { IsChecked = (bool)propertyGetter() };
+        checkbox.IsCheckedChanged = x => { if (!refreshing) propertySetter(x.IsChecked); };
         return new List<Control>()
         {
             new Control(new MyGuiControlLabel(text: label), minWidth: Control.LabelMinWidth),
-            new Control(new MyGuiControlCheckbox(toolTip: Description)
+            new Control(checkbox)
             {
-                IsChecked = (bool)propertyGetter(),
-                IsCheckedChanged = (x) => propertySetter(x.IsChecked),
-            }),
+                RefreshValue = () =>
+                {
+                    refreshing = true;
+                    try { checkbox.IsChecked = (bool)propertyGetter(); }
+                    finally { refreshing = false; }
+                }
+            },
         };
     }
     public List<Type> SupportedTypes { get; } = new List<Type>()

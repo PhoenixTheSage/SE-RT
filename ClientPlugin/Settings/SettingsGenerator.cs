@@ -69,6 +69,13 @@ internal class SettingsGenerator
         ActiveLayout.LayoutControls();
     }
 
+    public void RefreshValues()
+    {
+        if (controls == null) return;
+        foreach (var row in controls)
+            foreach (var control in row) control.RefreshValue?.Invoke();
+    }
+
     private void CreateConfigControls()
     {
         controls = new List<List<Control>>();

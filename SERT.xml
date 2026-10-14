@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<PluginData xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="GitHubPlugin">
+  <!-- Stable unique plugin ID; dependency references use this ID, not RepoId. -->
+  <Id>A32679E6-2B84-4E8F-B560-A84BC52F3286</Id>
+  <FriendlyName>Raytracing</FriendlyName>
+  <Author>PhoenixTheSage</Author>
+  <Tooltip>Experimental DX11 software ray/path-traced opaque lighting</Tooltip>
+  <Description>Low-sample opaque lighting with specialized reconstruction. Requires Anomaly RayScene API v1. Starts disabled; uncovered surfaces retain native lighting. Midrange performance and live-scene acceptance are pending.</Description>
+  <SourceDirectories><Directory>ClientPlugin</Directory></SourceDirectories>
+  <Asset Name="AssetFolder" Path="Assets/" />
+  <DependencyIds><Id>A9C29274-E447-49EE-881B-C980E6D190FD</Id></DependencyIds>
+  <Platforms>Windows,Linux</Platforms>
+  <Runtimes>CLR,CoreCLR</Runtimes>
+  <!-- Local manifest: assign RepoId and a reviewed Commit when publishing. -->
+</PluginData>

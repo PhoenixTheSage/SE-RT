@@ -4,7 +4,8 @@
     <!-- Folder containing SpaceEngineers.exe (empty = auto-detect from Steam) -->
     <Bin64></Bin64>
 
-    <!-- Pulsar plugin loader folder used for automatic deployment (empty = auto-detect) -->
+    <!-- Folder containing Legacy.exe (Pulsar). Empty = auto-detect next to Bin64
+         (Pulsar-Installer) or %AppData%\Pulsar / ~/.config/Pulsar. -->
     <Pulsar></Pulsar>
   </PropertyGroup>
 
@@ -33,17 +34,12 @@
     <!-- Steam fills in InstallLocation for game apps (244850) only, it is left empty
          for tool apps like the Dedicated Server (298740). -->
     <SteamGameDir Condition="'$(SteamGameDir)' == ''">$(registry:HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 244850@InstallLocation)</SteamGameDir>
-
-    <Pulsar Condition="'$(Pulsar)' == '' and '$(APPDATA)' != ''">$(APPDATA)\Pulsar</Pulsar>
   </PropertyGroup>
 
   <PropertyGroup Condition="!$([MSBuild]::IsOSPlatform('Windows')) and '$(HOME)' != ''">
     <SteamPath Condition="'$(SteamPath)' == '' and Exists('$(HOME)/.steam/steam/steamapps')">$(HOME)/.steam/steam</SteamPath>
     <SteamPath Condition="'$(SteamPath)' == '' and Exists('$(HOME)/.local/share/Steam/steamapps')">$(HOME)/.local/share/Steam</SteamPath>
     <SteamPath Condition="'$(SteamPath)' == '' and Exists('$(HOME)/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps')">$(HOME)/.var/app/com.valvesoftware.Steam/.local/share/Steam</SteamPath>
-
-    <Pulsar Condition="'$(Pulsar)' == '' and '$(XDG_CONFIG_HOME)' != ''">$(XDG_CONFIG_HOME)/Pulsar</Pulsar>
-    <Pulsar Condition="'$(Pulsar)' == ''">$(HOME)/.config/Pulsar</Pulsar>
   </PropertyGroup>
 
   <!-- Locate the Steam library folder holding the game, so non-default libraries work too -->
@@ -61,8 +57,19 @@
   </PropertyGroup>
 
   <!-- Last resort: default Steam library layout (also covers SteamCMD installs) -->
-  <PropertyGroup Condition="!$([MSBuild]::IsOSPlatform('Windows')) and '$(HOME)' != ''">
-    <Bin64 Condition="'$(Bin64)' == ''">$(HOME)/.steam/steam/steamapps/common/SpaceEngineers/Bin64</Bin64>
+  <PropertyGroup>
+    <Bin64 Condition="'$(Bin64)' == '' and $([MSBuild]::IsOSPlatform('Windows')) and Exists('C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers\Bin64')">C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers\Bin64</Bin64>
+    <Bin64 Condition="'$(Bin64)' == '' and !$([MSBuild]::IsOSPlatform('Windows')) and '$(HOME)' != ''">$(HOME)/.steam/steam/steamapps/common/SpaceEngineers/Bin64</Bin64>
+  </PropertyGroup>
+
+  <!-- Pulsar after Bin64 is known: Pulsar-Installer next to the game first, then
+       the classic AppData / XDG layout. Only set a path that actually exists. -->
+  <PropertyGroup>
+    <_GameRoot Condition="'$(Pulsar)' == '' and '$(Bin64)' != ''">$([System.IO.Path]::GetFullPath('$(Bin64)/..'))</_GameRoot>
+    <Pulsar Condition="'$(Pulsar)' == '' and '$(_GameRoot)' != '' and Exists('$(_GameRoot)/Pulsar/Legacy.exe')">$(_GameRoot)/Pulsar</Pulsar>
+    <Pulsar Condition="'$(Pulsar)' == '' and $([MSBuild]::IsOSPlatform('Windows')) and Exists('$(USERPROFILE)\AppData\Roaming\Pulsar\Legacy.exe')">$(USERPROFILE)\AppData\Roaming\Pulsar</Pulsar>
+    <Pulsar Condition="'$(Pulsar)' == '' and !$([MSBuild]::IsOSPlatform('Windows')) and '$(XDG_CONFIG_HOME)' != '' and Exists('$(XDG_CONFIG_HOME)/Pulsar')">$(XDG_CONFIG_HOME)/Pulsar</Pulsar>
+    <Pulsar Condition="'$(Pulsar)' == '' and !$([MSBuild]::IsOSPlatform('Windows')) and '$(HOME)' != '' and Exists('$(HOME)/.config/Pulsar')">$(HOME)/.config/Pulsar</Pulsar>
   </PropertyGroup>
 
   <!-- Bin64 with a trailing directory separator, for use in HintPath -->

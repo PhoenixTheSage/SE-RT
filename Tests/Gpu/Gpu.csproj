@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net48</TargetFramework><LangVersion>14</LangVersion><PlatformTarget>x64</PlatformTarget></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../ClientPlugin/Core/*.cs" Link="Core/%(Filename)%(Extension)"/>
+    <Compile Include="../../ClientPlugin/Rendering/*.cs" Link="Rendering/%(Filename)%(Extension)"/>
+    <Compile Include="../../ClientPlugin/Integration/AnomalyHost.cs" Link="AnomalyHost.cs"/>
+    <Reference Include="System.Numerics"/>
+    <Reference Include="SharpDX"><HintPath>$(Bin64Dir)SharpDX.dll</HintPath></Reference>
+    <Reference Include="SharpDX.Direct3D11"><HintPath>$(Bin64Dir)SharpDX.Direct3D11.dll</HintPath></Reference>
+    <Reference Include="SharpDX.DXGI"><HintPath>$(Bin64Dir)SharpDX.DXGI.dll</HintPath></Reference>
+    <Reference Include="SharpDX.D3DCompiler"><HintPath>$(Bin64Dir)SharpDX.D3DCompiler.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

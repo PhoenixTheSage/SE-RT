@@ -35,9 +35,11 @@ internal class SliderAttribute : Attribute, IElement
     public List<Control> GetControls(string name, Func<object> propertyGetter, Action<object> propertySetter)
     {
         var valueLabel = new MyGuiControlLabel();
+        bool refreshing = false;
 
         void ValueUpdate(MyGuiControlSlider element)
         {
+            if (refreshing) return;
             switch (Type)
             {
                 case SliderType.Integer:
@@ -102,7 +104,20 @@ internal class SliderAttribute : Attribute, IElement
         return new List<Control>()
         {
             new Control(new MyGuiControlLabel(text: label), minWidth: Control.LabelMinWidth),
-            new Control(slider, fillFactor: 1f, rightMargin: 0.005f),
+            new Control(slider, fillFactor: 1f, rightMargin: 0.005f)
+            {
+                RefreshValue = () =>
+                {
+                    refreshing = true;
+                    try
+                    {
+                        var value = Convert.ToSingle(propertyGetter());
+                        slider.Value = value;
+                        valueLabel.Text = Type == SliderType.Integer ? ((int)value).ToString() : MyValueFormatter.GetFormatedFloat(value, slider.LabelDecimalPlaces);
+                    }
+                    finally { refreshing = false; }
+                }
+            },
             new Control(valueLabel, minWidth: 0.06f),
         };
     }

@@ -1,12 +1,21 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project>
+  <!-- VS 17 MSBuild (ReSharper / Build Tools) cannot resolve .NET 10's
+       WorkloadAutoImportPropsLocator. This plugin does not use workloads. -->
+  <PropertyGroup>
+    <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+  </PropertyGroup>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
   <PropertyGroup>
     <OutputType>Library</OutputType>
     <RootNamespace>ClientPlugin</RootNamespace>
-    <AssemblyName>ClientPluginTemplate</AssemblyName>
+    <AssemblyName>SERT</AssemblyName>
     <LangVersion>14</LangVersion>
       
-    <!-- Target platforms on Windows and Linux -->
-    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('Windows'))">net48;net10.0</TargetFrameworks>
+    <!-- Target platforms on Windows and Linux.
+         VS 17 / ReSharper Build Tools MSBuild cannot host .NET 10 SDK tasks, so Full
+         Framework MSBuild builds net48 only. `dotnet build` still builds both. -->
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('Windows')) and '$(MSBuildRuntimeType)' == 'Core'">net48;net10.0</TargetFrameworks>
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('Windows')) and '$(MSBuildRuntimeType)' != 'Core'">net48</TargetFrameworks>
     <TargetFramework Condition="!$([MSBuild]::IsOSPlatform('Windows'))">net10.0</TargetFramework>
       
     <!-- Ensure SDK generates assembly attributes (no need for AssemblyInfo) -->
@@ -39,6 +48,11 @@
     <DefineConstants>TRACE;PULSAR;LOCAL_BUILD</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(PulsarSourceBuild)' == 'true'">
+    <DefineConstants>TRACE;PULSAR</DefineConstants>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
   </PropertyGroup>
 
   <ItemGroup>
@@ -247,6 +261,19 @@
     -->
   </ItemGroup>
 
+  <ItemGroup>
+    <Reference Include="System.Numerics" Condition="'$(TargetFramework)' == 'net48'" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="Patches/Example*.cs" />
+    <Compile Remove="Rendering/SoftwareDx11.cs" />
+    <Compile Remove="Rendering/GpuResources.cs" />
+    <Compile Remove="Rendering/GpuTimer.cs" />
+    <Compile Remove="Rendering/ShaderAbi.cs" />
+    <Content Include="../Assets/**/*" Link="Assets/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!-- Uncomment to enable publicizer support
   <PropertyGroup>
     <PublicizerClearCacheOnClean>true</PublicizerClearCacheOnClean>
@@ -305,5 +332,11 @@
           SourceFiles="$(PluginDataFile)" DestinationFiles="$(PluginDirectory)$(PathSeparator)plugin.xml" />
     <Message Condition="'$(PluginDirectory)' != ''" Importance="high"
              Text="Deployed the $(TargetFramework) build to &quot;$(PluginDirectory)&quot;" />
+    <ItemGroup Condition="'$(PluginDirectory)' != ''">
+      <ShaderAssets Include="$(RepoRoot)Assets\**\*" />
+    </ItemGroup>
+    <Copy Condition="'$(PluginDirectory)' != ''" SourceFiles="@(ShaderAssets)"
+          DestinationFiles="@(ShaderAssets->'$(PluginDirectory)\Assets\%(RecursiveDir)%(Filename)%(Extension)')" />
   </Target>
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
 </Project>
