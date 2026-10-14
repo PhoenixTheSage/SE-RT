@@ -60,7 +60,8 @@ static class Program
                 data.LastError = "test failure"; data.Fallbacks = 12;
                 hook.Update(false, true);
                 Check(status.Refreshes == refreshes + 1 && ((string)status.Values["Lifecycle and failures"]).Contains("test failure"), "new failures must reach status page");
-                settings.Buttons["Full status report"](); status.Buttons["Reset history"](); status.Buttons["Write report to log"]();
+                Check(settings.Buttons.Count == 0, "diagnostic buttons must live only on the Status page");
+                status.Buttons["Show Status"](); status.Buttons["Reset history"](); status.Buttons["Write report to log"]();
                 Check(shows == 1 && resets == 1 && logs == 1, "diagnostic buttons must call their owners");
                 hook.Update(true, true);
                 Check(TerminalConfigRegistry.Pages.Count == 2 && settings.Setters.Count == 15, "repeated updates must not duplicate controls");

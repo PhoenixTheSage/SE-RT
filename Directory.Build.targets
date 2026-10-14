@@ -1,0 +1,23 @@
+<Project>
+  <!-- Keep real internal-access grants. Publicizer 2.3 emits an invalid empty
+       grant when there were no members to publicize (for example, a cached DLL). -->
+  <Target Name="DeclarePublicizedAccess" AfterTargets="PublicizeAssemblies" BeforeTargets="GenerateAssemblyInfo"
+          Condition="'$(_UseIactStrategy)' == 'true'">
+    <ItemGroup>
+      <AssemblyAttribute Remove="System.Runtime.CompilerServices.IgnoresAccessChecksToAttribute" />
+      <AssemblyAttribute Include="System.Runtime.CompilerServices.IgnoresAccessChecksToAttribute" Condition="'@(Publicize)' != ''">
+        <_Parameter1>%(Publicize.Identity)</_Parameter1>
+      </AssemblyAttribute>
+    </ItemGroup>
+  </Target>
+
+  <!-- Build the companion only after its matching core is available. -->
+  <Target Name="BuildDx11Satellite" AfterTargets="Build" BeforeTargets="DeployPlugin"
+          Condition="'$(MSBuildProjectName)' == 'ClientPlugin' AND $([MSBuild]::IsOSPlatform('Windows')) AND '$(TargetFramework)' != '' AND '$(SkipDx11Satellite)' != 'true'">
+    <MSBuild Projects="$(MSBuildProjectDirectory)/ClientPlugin.Dx11.csproj" Targets="Restore"
+             RemoveProperties="TargetFramework;TargetFrameworks"
+             Properties="SkipDx11Satellite=true;RunPostBuildEvent=Never" />
+    <MSBuild Projects="$(MSBuildProjectDirectory)/ClientPlugin.Dx11.csproj" Targets="Build"
+             Properties="Configuration=$(Configuration);TargetFramework=$(TargetFramework);BuildProjectReferences=false;SkipDx11Satellite=true;RunPostBuildEvent=Never;Dx11BuildPass=true" />
+  </Target>
+</Project>

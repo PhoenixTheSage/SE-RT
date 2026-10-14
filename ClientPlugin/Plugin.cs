@@ -14,8 +14,8 @@ using SERT.Rendering;
 using VRage.Plugins;
 using VRage.Utils;
 #if !LOCAL_BUILD
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.0.1.0")]
+[assembly: AssemblyFileVersion("1.0.1.0")]
 #endif
 namespace ClientPlugin;
 public class Plugin : IPlugin
@@ -214,6 +214,7 @@ public class Plugin : IPlugin
         Config.Current.PropertyChanged -= ConfigChanged;
         terminal?.Dispose();
         lock (renderGate) { disposed = true; host.Dispose(); backend?.Dispose(); backend = null; scene = null; Instance = null; }
+        SatelliteAssembly.Reset();
         ConfigStorage.FlushPending(true);
     }
     public void OpenConfigDialog() { settings.SetLayout<Simple>(); MyGuiSandbox.AddScreen(settings.Dialog); }
@@ -268,10 +269,10 @@ static class SoftwareBackend
     {
         if (!AnomalyRenderer.AllowDx11Device)
             return null;
-        string path = Path.Combine(Path.GetDirectoryName(typeof(SoftwareBackend).Assembly.Location) ?? "", "SERT.Dx11.dll");
+        string path = SatelliteAssembly.Find("SERT.Dx11.dll", typeof(SoftwareBackend).Assembly);
         if (!File.Exists(path))
             return null;
-        var type = Assembly.LoadFrom(path).GetType("SERT.Rendering.SoftwareDx11");
+        var type = SatelliteAssembly.Load(path, typeof(SoftwareBackend).Assembly).GetType("SERT.Rendering.SoftwareDx11");
         return type == null ? null : (IRayTracingBackend)Activator.CreateInstance(type, host, assets, false);
     }
 }

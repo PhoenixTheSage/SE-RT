@@ -113,8 +113,6 @@ internal sealed class AnomalyTerminalHook : IDisposable
         Call(settings, "Dropdown", "Shadow sampling mode", typeof(SERT.Core.ShadowSamplingMode), (Func<object>)(() => ClientPlugin.Config.Current.ShadowSamplingMode),
             (Action<object>)(v => ClientPlugin.Config.Current.ShadowSamplingMode = (SERT.Core.ShadowSamplingMode)v), "Blue noise or hashed comparison with equal ray counts.");
         Call(settings, "Slider", "Sampling seed", 0f, 65535f, (Func<float>)(() => ClientPlugin.Config.Current.SamplingSeed), (Action<float>)(v => ClientPlugin.Config.Current.SamplingSeed = (int)v), "Fixed seed for repeatable comparisons.", 1f);
-        Call(settings, "Category", "Diagnostics");
-        Buttons(settings);
     }
 
     void PopulateStatus()
@@ -140,7 +138,7 @@ internal sealed class AnomalyTerminalHook : IDisposable
 
     void Buttons(object page)
     {
-        Call(page, "Button", "Full status report", show, "Open a scrollable snapshot with a Refresh button.");
+        Call(page, "Button", "Show Status", show, "Open a scrollable snapshot with a Refresh button.");
         Call(page, "Button", "Reset history", reset, "Clear temporal history and restart adaptive sampling on the next update.");
         Call(page, "Button", "Write report to log", log, "Write the full snapshot to SpaceEngineers.log for troubleshooting.");
     }

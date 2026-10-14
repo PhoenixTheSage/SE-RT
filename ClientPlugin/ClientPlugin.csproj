@@ -326,6 +326,8 @@
     <MakeDir Condition="'$(PluginDirectory)' != ''" Directories="$(PluginDirectory)" />
     <Copy Condition="'$(PluginDirectory)' != ''"
           SourceFiles="$(TargetPath)" DestinationFiles="$(PluginDirectory)$(PathSeparator)plugin.dll" />
+    <Copy Condition="'$(PluginDirectory)' != '' And $([MSBuild]::IsOSPlatform('Windows'))"
+          SourceFiles="$(TargetDir)SERT.Dx11.dll" DestinationFiles="$(PluginDirectory)$(PathSeparator)SERT.Dx11.dll" />
     <Copy Condition="'$(PluginDirectory)' != '' And Exists('$(TargetDir)$(TargetName).pdb')"
           SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFiles="$(PluginDirectory)$(PathSeparator)plugin.pdb" />
     <Copy Condition="'$(PluginDirectory)' != '' And Exists('$(PluginDataFile)')"
