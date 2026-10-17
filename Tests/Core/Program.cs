@@ -124,6 +124,12 @@ static class Program
     }
     static void Selection()
     {
+        foreach (int route in new[] { HardwareChoice.Pending, HardwareChoice.DirectX11, HardwareChoice.Vulkan })
+        foreach (bool option in new[] { false, true })
+        foreach (bool query in new[] { false, true }) {
+            var disabled = HardwareChoice.Select(option, route, query, enabled: false);
+            Check(!disabled.Trace && disabled.Status == "disabled", "master switch stops tracing independently of saved hardware option, route and capability");
+        }
         var offDx = HardwareChoice.Select(false, HardwareChoice.DirectX11, false);
         Check(offDx.Trace && offDx.Kind == BackendKind.SoftwareDx11, "DX11 without the option stays on the software tracer");
         var onDx = HardwareChoice.Select(true, HardwareChoice.DirectX11, true);

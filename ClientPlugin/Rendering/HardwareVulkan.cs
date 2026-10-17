@@ -15,9 +15,10 @@ public sealed class HardwareVulkan : IRayTracingBackend
     public long SceneBytes => 0;
     public long ReconstructionBytes => 0;
 
-    public void Apply(bool shadows, float exposure, float bias, float solarRadians)
+    public void Apply(bool enabled, bool shadows, float exposure, float bias, float solarRadians)
     {
-        VulkanRayApi.Set(true, shadows, exposure, bias, solarRadians);
+        VulkanRayApi.Set(enabled, enabled && shadows, exposure, bias, solarRadians);
+        if (!enabled) { status = "disabled"; return; }
         var caps = VulkanRayApi.Query();
         status = caps.RayQuery == 0
             ? "hardware acceleration missing ray query"

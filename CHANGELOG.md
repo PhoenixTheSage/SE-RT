@@ -1,5 +1,11 @@
 # SE-RT changelog
 
+## 1.0.2 — 2026-10-17
+
+- Gate backend selection and native Vulkan ray settings with the main Enabled switch while preserving the saved Hardware Acceleration preference.
+- Retain the existing three-argument HardwareChoice API and add explicit enabled-state selection; cover disabled Vulkan and DX11 decisions in core tests.
+- Document the conservative Vulkan sun-visibility scope and native fallback for incomplete geometry/budget refusals.
+
 ## 1.0.1 — 2026-10-14
 
 - Resolve and rebind SERT.Dx11 to the live Pulsar core, preserving the runtime backend interface identity; reset assembly resolution on disposal.

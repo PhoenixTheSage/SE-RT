@@ -4,6 +4,10 @@ Experimental ray/path-traced lighting for Space Engineers 1, with opaque shadows
 
 Requires the local Anomaly build containing `RayScene` API v1. SE-RT does not patch game rendering methods. Load both plugins before entering a world, then enable SE-RT in its configuration dialog. It starts disabled. With Rich HUD Master in the world, the same settings appear under **Anomaly Shaders → SE-RT → Settings**, beside a live **Status** page. The Pulsar configuration dialog remains available without Master.
 
+The main Enabled switch gates both software and Vulkan hardware tracing. A saved Hardware Acceleration preference remains available while SE-RT is disabled, without enabling native ray builds or dispatches.
+
+The Vulkan hardware path supplements native sun visibility before stock material lighting. Local lights retain native shading. It does not implement hardware reflections, indirect illumination, or the software temporal reconstruction stack. Its incomplete TLAS retains native shadow coverage for geometry it cannot certify, and budget refusals retain native output.
+
 Features include native sun/point/spot sources, emissive mesh and voxel textures, generated material texture changes, environment lighting, bounded emitter proxies, one indirect continuation, RIS with temporal/spatial reuse, separate diffuse/specular/sun histories, and conservative native fallback. Half dimensions are the default; quarter dimensions are selected under memory or sustained GPU-time pressure.
 
 See [implementation and acceptance notes](Docs/Implementation.md) for the pipeline, exact budgets, current approximations and tests. Hardware tracing is a Vulkan ray-query pass on the renderer device. It stays off until that renderer is active and the ray-query API is present. DX11 stays on the software backend.

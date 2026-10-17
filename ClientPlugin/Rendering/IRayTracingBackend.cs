@@ -49,8 +49,12 @@ public static class HardwareChoice
     public const int DirectX11 = 1;
     public const int Vulkan = 2;
 
-    public static HardwareDecision Select(bool option, int route, bool rayQuery)
+    public static HardwareDecision Select(bool option, int route, bool rayQuery) => Select(option, route, rayQuery, true);
+
+    public static HardwareDecision Select(bool option, int route, bool rayQuery, bool enabled)
     {
+        if (!enabled)
+            return new HardwareDecision(false, route == DirectX11 ? BackendKind.SoftwareDx11 : BackendKind.HardwareVulkan, "disabled");
         if (route == DirectX11)
             return new HardwareDecision(true, BackendKind.SoftwareDx11, option
                 ? "software DX11; hardware acceleration waits for the Vulkan renderer"

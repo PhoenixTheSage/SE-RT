@@ -2,4 +2,5 @@
   <PropertyGroup><OutputType>Exe</OutputType><TargetFrameworks>net48;net10.0</TargetFrameworks><LangVersion>14</LangVersion><PlatformTarget>x64</PlatformTarget></PropertyGroup>
   <ItemGroup><Compile Include="../../ClientPlugin/Core/*.cs" Link="Core/%(Filename)%(Extension)"/><Compile Include="../../ClientPlugin/Rendering/IRayTracingBackend.cs" Link="IRayTracingBackend.cs"/><Reference Include="System.Numerics" Condition="'$(TargetFramework)' == 'net48'"/></ItemGroup>
   <ItemGroup><Compile Include="../../../Anomaly/ClientPlugin/RayTracing/OpaqueLightingOwnership.cs" Link="OpaqueLightingOwnership.cs"/></ItemGroup>
+  <ItemGroup><Compile Include="../../ClientPlugin/Rendering/RendererDiagnostics.cs" Link="RendererDiagnostics.cs"/></ItemGroup>
 </Project>

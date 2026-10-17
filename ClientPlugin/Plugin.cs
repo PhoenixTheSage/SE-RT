@@ -14,8 +14,8 @@ using SERT.Rendering;
 using VRage.Plugins;
 using VRage.Utils;
 #if !LOCAL_BUILD
-[assembly: AssemblyVersion("1.0.1.0")]
-[assembly: AssemblyFileVersion("1.0.1.0")]
+[assembly: AssemblyVersion("1.0.2.0")]
+[assembly: AssemblyFileVersion("1.0.2.0")]
 #endif
 namespace ClientPlugin;
 public class Plugin : IPlugin
@@ -68,7 +68,7 @@ public class Plugin : IPlugin
         }
         var caps = VulkanRayApi.Query();
         rayQuery = caps.RayQuery != 0;
-        var decision = HardwareChoice.Select(Config.Current.HardwareAcceleration, AnomalyRenderer.Active, rayQuery);
+        var decision = HardwareChoice.Select(Config.Current.HardwareAcceleration, AnomalyRenderer.Active, rayQuery, enabled: Config.Current.Enabled);
         hardwareStatus = decision.Status;
         if (decision.Kind == BackendKind.SoftwareDx11 && decision.Trace)
         {
@@ -91,7 +91,7 @@ public class Plugin : IPlugin
     void SubmitHardware(HardwareVulkan hardware)
     {
         var config = Config.Current.Snapshot();
-        hardware.Apply(config.RayTracedShadows, config.StorageExposure, config.ShadowBias, config.SolarAngularRadius * (float)(Math.PI / 180.0));
+        hardware.Apply(config.Enabled && config.HardwareAcceleration, config.RayTracedShadows, config.StorageExposure, config.ShadowBias, config.SolarAngularRadius * (float)(Math.PI / 180.0));
         hardware.Render(null, null, config.SamplingScale, config.StorageExposure);
     }
     void BindRayDevice()
