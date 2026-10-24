@@ -117,6 +117,43 @@ void sampleMaterial(Triangle t,float2 bary,Material m,out float4 cm,out float4 e
 }
 struct Hit { uint status,triIndex,instance; float distance; float2 uv; };
 // status: 0 certified miss, 1 hit, 2 incomplete coverage/material, 3 bounded traversal overflow.
+#ifdef SERT_RAY_QUERY
+// Hardware traversal of the same scene (Vulkan ray query). The TLAS custom index is the instance index,
+// InstanceTriangleBase maps a primitive back to its triangle, every triangle is a non-opaque candidate,
+// and unknown-coverage instances are AABB candidates, so each candidate meets the software rules below.
+RaytracingAccelerationStructure SceneTlas:register(t68);
+StructuredBuffer<uint> InstanceTriangleBase:register(t69);
+float queryMinimum(float3 o,float3 d){return max(1e-7,rayError(o)*.25/max(length(d),1e-12));}
+Hit traceScene(float3 o,float3 d,float maxT,bool shadow,bool primary) {
+    Hit h=(Hit)0;h.distance=maxT;
+    if(InstanceCount==0 || (!shadow && length(o)+maxT>256)) {h.status=2;return h;}
+    bool beyondCoverage=false;
+    if(shadow) {
+        float b=dot(o,d),c=dot(o,o)-256*256,disc=b*b-c;
+        if(c>0 || disc<0){h.status=2;return h;}
+        float horizon=max(0,-b+sqrt(disc));beyondCoverage=maxT>horizon;
+        h.distance=min(maxT,horizon);
+    }
+    float missing=h.distance+1;
+    RayDesc ray;ray.Origin=o;ray.Direction=d;ray.TMin=queryMinimum(o,d);ray.TMax=h.distance;
+    RayQuery<RAY_FLAG_FORCE_NON_OPAQUE> q;q.TraceRayInline(SceneTlas,0,0xFF,ray);
+    [loop] while(q.Proceed()) {
+        uint k=q.CandidateInstanceID();if(k>=InstanceCount){h.status=3;return h;}Instance inst=Instances[k];
+        if(q.CandidateType()!=CANDIDATE_NON_OPAQUE_TRIANGLE){float nearT;if(box(o,d,inst.lo,inst.hi,h.distance,nearT))missing=min(missing,nearT);continue;}
+        uint t=InstanceTriangleBase[k]+q.CandidatePrimitiveIndex();if(t>=TriangleCount){h.status=3;return h;}
+        Triangle tri=Triangles[t];float distance=q.CandidateTriangleRayT();float2 bary=q.CandidateTriangleBarycentrics();
+        Material mat=Materials[inst.materialBase+tri.material];
+        if(primary && (mat.flags&32)!=0)continue;
+        if(shadow && (mat.flags&1)!=0 && (mat.flags&8)!=0){missing=min(missing,distance);continue;}
+        float opacity=Extensions.SampleLevel(LinearWrap,float3(textureUv(tri,bary),mat.atlasIndex),0).z;
+        if((mat.flags&1)!=0 && opacity<.5)continue;
+        if((mat.flags&2)!=0 || (mat.flags&16)!=0){missing=min(missing,distance);continue;}
+        q.CommitNonOpaqueTriangleHit();h.status=1;h.distance=distance;h.triIndex=t;h.instance=k;h.uv=bary;
+        if(shadow){q.Abort();return h;}
+    }
+    if(missing<=h.distance || (shadow && beyondCoverage))h.status=2;return h;
+}
+#else
 Hit traceScene(float3 o,float3 d,float maxT,bool shadow,bool primary) {
     Hit h=(Hit)0;h.distance=maxT;
     if(InstanceCount==0 || (!shadow && length(o)+maxT>256)) {h.status=2;return h;}
@@ -164,6 +201,7 @@ Hit traceScene(float3 o,float3 d,float maxT,bool shadow,bool primary) {
     }
     if(missing<=h.distance || (shadow && beyondCoverage))h.status=2;return h;
 }
+#endif
 Hit trace(float3 o,float3 d,float maxT){return traceScene(o,d,maxT,false,false);}
 Hit tracePrimary(float3 o,float3 d,float maxT){return traceScene(o,d,maxT,false,true);}
 Hit traceShadow(float3 o,float3 d,float maxT){return traceScene(o,d,maxT,true,false);}

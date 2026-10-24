@@ -40,7 +40,7 @@ public class Plugin : IPlugin
     uint lastFrame;
     int epoch;
     string lastError = "none", lastReset = "none", hardwareStatus = "hardware acceleration off";
-    bool rayQuery;
+    bool rayQuery, vulkanRayQuery;
     volatile RendererDiagnostics diagnostics = new RendererDiagnostics();
     public string Status { get; private set; } = "starting";
     public void Init(object gameInstance)
@@ -70,9 +70,12 @@ public class Plugin : IPlugin
         rayQuery = caps.RayQuery != 0;
         var decision = HardwareChoice.Select(Config.Current.HardwareAcceleration, AnomalyRenderer.Active, rayQuery, enabled: Config.Current.Enabled);
         hardwareStatus = decision.Status;
-        if ((decision.Kind == BackendKind.SoftwareDx11 || decision.Kind == BackendKind.SoftwareVulkan) && decision.Trace)
+        // Hardware tracing on Vulkan runs the same stack through ray query on the tenant session.
+        if ((decision.Kind == BackendKind.SoftwareDx11 || decision.Kind == BackendKind.SoftwareVulkan || decision.Kind == BackendKind.HardwareVulkan) && decision.Trace)
         {
-            if (backend is HardwareVulkan || (backend is SoftwareVulkan) != (decision.Kind == BackendKind.SoftwareVulkan)) { backend?.Dispose(); backend = null; }
+            bool vulkan = decision.Kind != BackendKind.SoftwareDx11; vulkanRayQuery = decision.Kind == BackendKind.HardwareVulkan;
+            if (backend is HardwareVulkan || (backend is SoftwareVulkan) != vulkan || (backend is SoftwareVulkan sv && sv.RayQuery != vulkanRayQuery)) { backend?.Dispose(); backend = null; }
+            if (vulkan) VulkanRayApi.Disable();
             if (!host.Bound) BindRayDevice();
             return;
         }
@@ -179,7 +182,7 @@ public class Plugin : IPlugin
                 if (!Directory.Exists(Path.Combine(assetFolder, "Shaders"))) { Status = "native fallback: shader assets unavailable"; return; }
                 bool vulkan = frame[7] is object[] devices && devices.Length > 0 && "vulkan".Equals(devices[0]);
                 if (backend != null && (backend is SoftwareVulkan) != vulkan) { backend.Dispose(); backend = null; }
-                if (backend == null) backend = vulkan ? new SoftwareVulkan(host, () => assetFolder) : SoftwareBackend.TryCreate(host, () => assetFolder);
+                if (backend == null) backend = vulkan ? new SoftwareVulkan(host, () => assetFolder, false, vulkanRayQuery) : SoftwareBackend.TryCreate(host, () => assetFolder);
                 if (backend == null) { Status = "native fallback: DX11 ray backend unavailable"; return; }
                 backend.SetShadowSettings(config.Shadows);
                 if (lastExposure != config.StorageExposure) { backend.InvalidateHistory(); lastExposure = config.StorageExposure; }

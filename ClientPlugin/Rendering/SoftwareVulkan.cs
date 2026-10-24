@@ -17,12 +17,16 @@ namespace SERT.Rendering;
 /// state is kept per stage and copied into each dispatch or draw, including DX11's unbinding of a resource's
 /// shader views when it is bound as an output. Renderer images are ids in frame[7]; material and cookie textures
 /// are renderer texture ids.
+/// With ray query (option C) the same stack traces through a tenant TLAS instead of the software BVH: one BLAS per
+/// mesh root over its contiguous triangle range, rebuilt each frame for skinned roots, a unit-box AABB BLAS scaled to
+/// each unknown-coverage instance, and a TLAS per frame whose custom index is the instance index. Identify, Trace and
+/// Refine compile their SERT_RAY_QUERY variants; every other pass is unchanged.
 /// </summary>
 public sealed class SoftwareVulkan : IRayTracingBackend, ISoftwareDx11Session
 {
     // VkFormat values for the DX11 formats SoftwareDx11 allocates.
     const int Rgba32f = 109, Rgba16f = 97, Rg32ui = 101, R32ui = 98, Rgba32ui = 107, Rgba8ui = 41;
-    const uint KindNull = 0, KindImage = 1, KindBuffer = 2, KindUniform = 3, KindRenderer = 4, KindTexture = 5, KindFrame = 6, KindSampler = 7;
+    const uint KindNull = 0, KindImage = 1, KindBuffer = 2, KindUniform = 3, KindRenderer = 4, KindTexture = 5, KindFrame = 6, KindSampler = 7, KindAccel = 8;
     const uint Wrap = 0, Clamp = 1;
 
     sealed class Buf { public ulong Id; public long Bytes; }
@@ -40,13 +44,14 @@ public sealed class SoftwareVulkan : IRayTracingBackend, ISoftwareDx11Session
         public void Bind(uint binding, uint kind, ulong id, ulong offset = 0, ulong bytes = 0) { W(bindings, binding); W(bindings, kind); W(bindings, id); W(bindings, offset); W(bindings, bytes); }
         public ulong Data(byte[] data) { ulong at = (ulong)blob.Count; blob.AddRange(data); while (blob.Count % 16 != 0) blob.Add(0); return at; }
         public void Uniform(uint binding, byte[] data) { ulong at = Data(data); Bind(binding, KindUniform, 0, at, (ulong)data.Length); }
-        public void Command(uint op, int first, ulong pipeline, uint x, uint y, uint z, ulong[] targets = null, uint[] layers = null, ulong source = 0, ulong offset = 0, ulong blobOffset = 0, ulong bytes = 0, uint value = 0)
+        public void Command(uint op, int first, ulong pipeline, uint x, uint y, uint z, ulong[] targets = null, uint[] layers = null, ulong source = 0, ulong offset = 0, ulong blobOffset = 0, ulong bytes = 0,
+            uint value = 0, uint value1 = 0, uint flags = 0)
         {
             W(commands, op); W(commands, (uint)first); W(commands, (uint)(op == 1 || op == 2 ? First - first : 0)); W(commands, (uint)(targets?.Length ?? 0));
-            W(commands, x); W(commands, y); W(commands, z); W(commands, 0u); W(commands, pipeline); W(commands, source);
+            W(commands, x); W(commands, y); W(commands, z); W(commands, flags); W(commands, pipeline); W(commands, source);
             for (int i = 0; i < 3; ++i) W(commands, targets != null && i < targets.Length ? targets[i] : 0UL);
             for (int i = 0; i < 3; ++i) W(commands, layers != null && i < layers.Length ? layers[i] : 0u);
-            W(commands, 0u); W(commands, offset); W(commands, blobOffset); W(commands, bytes); W(commands, value); W(commands, 0u); W(commands, 0u); W(commands, 0u);
+            W(commands, 0u); W(commands, offset); W(commands, blobOffset); W(commands, bytes); W(commands, value); W(commands, value1); W(commands, 0u); W(commands, 0u);
         }
         public void Flush(Action<byte[], byte[], byte[]> record)
         {
@@ -57,14 +62,20 @@ public sealed class SoftwareVulkan : IRayTracingBackend, ISoftwareDx11Session
 
     readonly AnomalyHost host;
     readonly Func<string> assets;
-    readonly bool collectStatistics;
+    readonly bool collectStatistics, rayQuery;
+    // Ray-query scene: outside the shared allocation forecast, released with the scene.
+    readonly List<object> rayResources = new List<object>();
+    Buf triangleIndices, aabb, instanceBase; ulong tlas, unknownBlas;
+    readonly Dictionary<uint, ulong> rootBlas = new Dictionary<uint, ulong>();
+    readonly Dictionary<uint, (uint First, uint Count)> rootRanges = new Dictionary<uint, (uint, uint)>();
+    readonly HashSet<uint> skinnedRoots = new HashSet<uint>();
     readonly List<object> shaders = new List<object>(), sceneResources = new List<object>(), screenResources = new List<object>();
     readonly Dictionary<string, ulong> compute = new Dictionary<string, ulong>();
     readonly Dictionary<int, Ref> cs = new Dictionary<int, Ref>(), ps = new Dictionary<int, Ref>();
     readonly Recorder recorder = new Recorder();
     IReadOnlyDictionary<string, Delegate> session;
     Func<long, ulong> createBuffer; Func<int, int, int, int, int, ulong> createImage; Func<byte[], string, ulong> createCompute;
-    Func<byte[], string, byte[], string, int[], ulong> createRaster; Action<ulong> destroy; Action<byte[], byte[], byte[]> record;
+    Func<byte[], string, byte[], string, int[], ulong> createRaster; Action<ulong> destroy; Action<byte[], byte[], byte[]> record; Func<bool, ulong> createAccel;
     ulong guides, atlas, composite;
     Task<Dictionary<string, byte[]>> compilation;
     Dictionary<string, byte[]> bytecode;
@@ -101,10 +112,12 @@ public sealed class SoftwareVulkan : IRayTracingBackend, ISoftwareDx11Session
     uint[] cookieTiles;
     object[][] cookies = Array.Empty<object[]>();
 
-    public SoftwareVulkan(AnomalyHost host, Func<string> assets, bool collectStatistics = false)
-    { this.host = host; this.assets = assets; this.collectStatistics = collectStatistics; }
+    public SoftwareVulkan(AnomalyHost host, Func<string> assets, bool collectStatistics = false) : this(host, assets, collectStatistics, false) { }
+    public SoftwareVulkan(AnomalyHost host, Func<string> assets, bool collectStatistics, bool rayQuery)
+    { this.host = host; this.assets = assets; this.collectStatistics = collectStatistics; this.rayQuery = rayQuery; }
 
-    public string Name => "Vulkan software BVH";
+    public bool RayQuery => rayQuery;
+    public string Name => rayQuery ? "Vulkan hardware ray query" : "Vulkan software BVH";
     public string Status { get; private set; } = "idle";
     public long SceneBytes { get; private set; }
     public long ReconstructionBytes { get; private set; }
@@ -220,6 +233,61 @@ public sealed class SoftwareVulkan : IRayTracingBackend, ISoftwareDx11Session
         createBuffer = (Func<long, ulong>)session["CreateBuffer"]; createImage = (Func<int, int, int, int, int, ulong>)session["CreateImage"];
         createCompute = (Func<byte[], string, ulong>)session["CreateCompute"]; createRaster = (Func<byte[], string, byte[], string, int[], ulong>)session["CreateRaster"];
         destroy = (Action<ulong>)session["Destroy"]; record = (Action<byte[], byte[], byte[]>)session["Record"];
+        if (rayQuery)
+        {
+            if (!(session.TryGetValue("RayQuery", out var query) && query is Func<bool> q && q() && session.TryGetValue("CreateAccel", out var accel)))
+                throw new InvalidOperationException("SE-Vulkan tenant session lacks ray query");
+            createAccel = (Func<bool, ulong>)accel;
+        }
+    }
+    ulong Accel(bool top) { ulong id = createAccel(top); rayResources.Add(id); return id; }
+    Buf RayBuffer(int count, int stride) => Buffer(rayResources, count, stride);
+    void BuildBlas(uint root) { var r = rootRanges[root]; recorder.Command(9, 0, 0, r.Count, 0, 0, new[] { rootBlas[root], triangleIndices.Id }, source: vertices.Id, offset: (ulong)r.First * 12, value: 32, value1: (uint)Math.Max(1, vertexCount)); }
+    int vertexCount;
+    // Row-vector camera-relative world (p * World) as VkTransformMatrixKHR rows.
+    static float[] Rows(Matrix4x4 m) => new[] { m.M11, m.M21, m.M31, m.M41, m.M12, m.M22, m.M32, m.M42, m.M13, m.M23, m.M33, m.M43 };
+    void BuildRayScene(SceneGeometry scene)
+    {
+        Release(rayResources); rootBlas.Clear(); rootRanges.Clear(); skinnedRoots.Clear(); vertexCount = scene.Vertices.Length;
+        var indices = new uint[scene.Triangles.Length * 3];
+        for (int i = 0; i < scene.Triangles.Length; ++i) { indices[i * 3] = scene.Triangles[i].A; indices[i * 3 + 1] = scene.Triangles[i].B; indices[i * 3 + 2] = scene.Triangles[i].C; }
+        triangleIndices = RayBuffer(indices.Length, 4); Upload(triangleIndices, indices);
+        aabb = RayBuffer(6, 4); Upload(aabb, new[] { 0f, 0, 0, 1, 1, 1 });
+        unknownBlas = Accel(false); recorder.Command(9, 0, 0, 1, 0, 0, new[] { unknownBlas }, source: aabb.Id, flags: 1);
+        foreach (int root in scene.SkinRoots) skinnedRoots.Add((uint)root);
+        var bases = new uint[Math.Max(1, scene.Instances.Length)];
+        for (int k = 0; k < scene.Instances.Length; ++k)
+        {
+            uint root = scene.Instances[k].Root; if (root == uint.MaxValue) continue;
+            if (!rootRanges.TryGetValue(root, out var range))
+            {
+                // A mesh root owns one contiguous triangle range: the span of its subtree's leaves.
+                uint first = uint.MaxValue, last = 0; var stack = new Stack<uint>(); stack.Push(root);
+                while (stack.Count > 0) { var n = scene.Nodes[stack.Pop()]; if (n.IsLeaf) { first = Math.Min(first, n.Left); last = Math.Max(last, n.Left + n.Count); } else { stack.Push(n.Left); stack.Push(n.Left + 1); } }
+                range = (first, last - first); rootRanges[root] = range; rootBlas[root] = Accel(false); BuildBlas(root);
+            }
+            bases[k] = range.First;
+        }
+        instanceBase = RayBuffer(bases.Length, 4); Upload(instanceBase, bases);
+        tlas = Accel(true);
+    }
+    void BuildTlas(SceneGeometry scene)
+    {
+        var records = new byte[scene.Instances.Length * 80];
+        for (int k = 0; k < scene.Instances.Length; ++k)
+        {
+            var inst = scene.Instances[k]; float[] rows; ulong blas;
+            if (inst.Root != uint.MaxValue) { rows = Rows(inst.World); blas = rootBlas[inst.Root]; }
+            else
+            {
+                var size = Vector3.Max(inst.Max - inst.Min, new Vector3(1e-4f));
+                rows = new[] { size.X, 0, 0, inst.Min.X, 0, size.Y, 0, inst.Min.Y, 0, 0, size.Z, inst.Min.Z }; blas = unknownBlas;
+            }
+            int at = k * 80; System.Buffer.BlockCopy(rows, 0, records, at, 48);
+            BitConverter.GetBytes((uint)k).CopyTo(records, at + 48); BitConverter.GetBytes(0xFFu).CopyTo(records, at + 52); BitConverter.GetBytes(1u).CopyTo(records, at + 56);
+            BitConverter.GetBytes(blas).CopyTo(records, at + 64);
+        }
+        recorder.Command(10, 0, 0, (uint)scene.Instances.Length, 0, 0, new[] { tlas }, blobOffset: recorder.Data(records), bytes: (ulong)records.Length);
     }
 
     void Initialize()
@@ -295,6 +363,7 @@ public sealed class SoftwareVulkan : IRayTracingBackend, ISoftwareDx11Session
         tree = Buffer(sceneResources, treeLeaves * 2, 4); stats = Buffer(sceneResources, 8, 4);
         SceneBytes = sceneResources.Sum(x => x is Tex t ? t.Bytes : ((Buf)x).Bytes) + blueNoise.Bytes + Marshal.SizeOf<Parameters>() + (shadowSettings.Enabled ? 2048L * 2048 * 4 + 80 : 0);
         if (SceneBytes != predicted) throw new InvalidOperationException("Scene allocation disagrees with its forecast");
+        if (rayQuery) BuildRayScene(scene);
     }
     // Renderer texture ids identify a texture as DX11's view pointers do.
     static string TextureKey(object[] textures) => string.Join(":", textures.Select(x => x is ulong id ? id.ToString() : "0"));
@@ -352,6 +421,7 @@ public sealed class SoftwareVulkan : IRayTracingBackend, ISoftwareDx11Session
         Set(cs, 36, R(previousNormal), R(previousIdentity), R(filtered));
         Set(cs, 49, R(geometryGuide), R(blueNoise), R(sourceKey), R(previousSourceKey), R(shadowGuide), R(previousShadowGuide), R(fast), R(previousFast), R(sunFast), R(previousSunFast));
         Set(cs, 66, R(guideQuality)); Set(cs, 67, R(vertexErrors));
+        if (rayQuery) { Set(cs, 68, new Ref(KindAccel, tlas)); Set(cs, 69, R(instanceBase)); }
     }
 
     public bool Render(object[] frame, SceneGeometry scene, float scale, float exposure)
@@ -378,7 +448,10 @@ public sealed class SoftwareVulkan : IRayTracingBackend, ISoftwareDx11Session
             {
                 var result = new Dictionary<string, byte[]>();
                 foreach (string name in new[] { "Fullscreen", "Guides", "Atlas", "Composite", "Skin", "Refit", "Identify", "LightWeights", "Candidates", "Reuse", "Trace", "Temporal", "Atrous", "Classify", "Refine" })
-                    result[name] = host.Compile(Path.Combine(root, "Shaders", name + ".hlsl"), name == "Fullscreen" ? 0 : name == "Guides" || name == "Atlas" || name == "Composite" ? 1 : 3);
+                {
+                    bool traced = rayQuery && (name == "Identify" || name == "Trace" || name == "Refine");
+                    result[name] = host.Compile(Path.Combine(root, "Shaders", name + (traced ? "RayQuery" : "") + ".hlsl"), name == "Fullscreen" ? 0 : name == "Guides" || name == "Atlas" || name == "Composite" ? 1 : traced ? 4 : 3);
+                }
                 return result;
             });
         }
@@ -392,7 +465,7 @@ public sealed class SoftwareVulkan : IRayTracingBackend, ISoftwareDx11Session
         SceneAssembler.Refresh(scene, frame);
         if (SoftwareForecast.Screen(checked((int)Math.Ceiling(size[0] * scale) * (int)Math.Ceiling(size[1] * scale)), 0) > Budget.ReconstructionBytes) scale = .25f;
         // Tenant ids retire when the GPU is done with them, so replacement needs no retirement wait.
-        if (initializedRoot != compiledRoot) { Release(screenResources); Release(sceneResources); Release(shaders); compute.Clear(); signature = 0; width = 0; Initialize(); }
+        if (initializedRoot != compiledRoot) { Release(screenResources); Release(sceneResources); Release(rayResources); Release(shaders); compute.Clear(); signature = 0; width = 0; Initialize(); }
         if (signature != scene.Signature || epoch != (int)frame[1]) BuildScene(scene, frame);
         if (allocatedRefinementFraction != shadowSettings.RefinementFraction || width == 0 || fullWidth != size[0] || fullHeight != size[1] || width != Math.Max(1, (int)Math.Ceiling(size[0] * scale))) BuildScreen(size[0], size[1], scale);
         cookies = frame.Length > 13 ? (object[][])frame[13] : Array.Empty<object[]>();
@@ -484,10 +557,14 @@ public sealed class SoftwareVulkan : IRayTracingBackend, ISoftwareDx11Session
         Draw(guides, width, height, new[] { position, normal, albedo });
         BindScene(); csFrame = true; Set(cs, 59, Ref.Null); Set(cs, 40, R(sources), R(poses), Ref.Null, Renderer(gpu[10]), Renderer(gpu[9]));
         if (skinCount > 0) { p.Pass = (uint)skinCount; Parameters(ref p); Set(cs, 48, R(skinIndices)); Set(cs, 67, Ref.Null); Set(cs, 16, Ref.Null); Dispatch("Skin", (skinCount + 63) / 64, 1, R(vertices), R(vertexErrors)); Set(cs, 16, R(vertices)); Set(cs, 67, R(vertexErrors)); }
-        Set(cs, 18, Ref.Null);
-        for (int d = refitCounts.Length - 1; d >= 0; --d) if (refitCounts[d] > 0)
-        { p.Pass = (uint)refitCounts[d]; Parameters(ref p); Set(cs, 42, R(refitIndices[d])); Dispatch("Refit", (refitCounts[d] + 63) / 64, 1, R(nodes)); }
-        Set(cs, 18, R(nodes));
+        if (rayQuery) { foreach (uint skinned in skinnedRoots) if (rootBlas.ContainsKey(skinned)) BuildBlas(skinned); BuildTlas(scene); }
+        else
+        {
+            Set(cs, 18, Ref.Null);
+            for (int d = refitCounts.Length - 1; d >= 0; --d) if (refitCounts[d] > 0)
+            { p.Pass = (uint)refitCounts[d]; Parameters(ref p); Set(cs, 42, R(refitIndices[d])); Dispatch("Refit", (refitCounts[d] + 63) / 64, 1, R(nodes)); }
+            Set(cs, 18, R(nodes));
+        }
         int gx = (width + 7) / 8, gy = (height + 7) / 8;
         Set(cs, 27, Ref.Null); Set(cs, 49, Ref.Null); Set(cs, 24, Ref.Null);
         Dispatch("Identify", gx, gy, R(identity), R(geometryGuide), R(position));
@@ -546,13 +623,13 @@ public sealed class SoftwareVulkan : IRayTracingBackend, ISoftwareDx11Session
     // Drops ids of a renderer that no longer exists.
     void Forget()
     {
-        screenResources.Clear(); sceneResources.Clear(); shaders.Clear(); compute.Clear(); session = null; record = null;
+        screenResources.Clear(); sceneResources.Clear(); rayResources.Clear(); shaders.Clear(); compute.Clear(); session = null; record = null;
         width = height = fullWidth = fullHeight = 0; signature = 0; history = false; previousCamera = null; initializedRoot = null;
         proxies = new ProxyCatalog(); SceneBytes = ReconstructionBytes = 0; lightData = null; atlasReady = null;
     }
     public void Reset()
     {
-        Release(screenResources); Release(sceneResources); Release(shaders); compute.Clear();
+        Release(screenResources); Release(sceneResources); Release(rayResources); Release(shaders); compute.Clear();
         width = height = fullWidth = fullHeight = 0; signature = 0; history = false; previousCamera = null; initializedRoot = null;
         proxies = new ProxyCatalog(); SceneBytes = ReconstructionBytes = 0; lightData = null; atlasReady = null; refinementBudget.Reset();
         session = null; record = null;

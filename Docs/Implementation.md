@@ -107,3 +107,32 @@ Validation (SE-Vulkan test projects):
 - `--sert-scene-only` (SceneSubmissionGpuTests) composes a real GBuffer scene: the ray-coverage view traces 394 of 400 armor pixels. The 6 misses sit on shared triangle edges.
 
 Both lanes have zero validation errors.
+
+## Hardware ray query on Vulkan (option C)
+
+With hardware acceleration on and ray query available, Vulkan runs `SoftwareVulkan` in ray-query mode. The status reads "hardware ray query", and SE-Vulkan's earlier native sun-visibility path is switched off.
+
+The scene is built as acceleration structures on the tenant session:
+
+- each mesh root's contiguous triangle range becomes a BLAS over a tight index copy;
+- skinned roots rebuild their BLAS after Skin each frame, so Refit is not dispatched;
+- unknown-coverage instances share a unit AABB BLAS scaled to their bounds;
+- the TLAS is rebuilt each frame, with the instance index as its custom index.
+
+`InstanceTriangleBase` (t69) maps a primitive back to its triangle. The TLAS binds at t68.
+
+`IdentifyRayQuery`, `TraceRayQuery` and `RefineRayQuery` (profile 4, `cs_6_5`) compile the `SERT_RAY_QUERY` variants of `traceScene` and `traceVisibility`:
+
+- Every triangle is a non-opaque candidate, so the software rules decide each one: glass on primary rays, alpha test, incomplete materials, glass transmission layers.
+- AABB candidates mark unknown coverage.
+- An unknown candidate counts when it is nearer than the final limit, which is the order-independent form of the software test.
+
+Every other pass, buffer and forecast is unchanged. DX11 never compiles the wrappers.
+
+Validation (`--sert-scene-only`):
+
+- the ray-query view traces all 400 armor pixels (the BVH misses 6 on shared edges);
+- lighting matches the software result to 0.25/255 mean;
+- zero validation errors.
+
+`--sert-vulkan-only` compiles the three variants through Anomaly's actual `CompileShader` and builds their pipelines.

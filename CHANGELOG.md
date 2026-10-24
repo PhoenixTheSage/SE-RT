@@ -5,6 +5,7 @@
 - Add `SoftwareVulkan`: the software ray-tracing stack on Anomaly's Vulkan route, recorded into SE-Vulkan's tenant compute session. Vulkan selects it when hardware acceleration is off or the device lacks ray query.
 - Share the `Parameters` constants and allocation forecasts between the DX11 and Vulkan backends.
 - Link `VulkanRayApi.cs` into the GPU test project so it builds again.
+- Hardware acceleration on Vulkan now runs the full stack through ray query: tenant BLAS/TLAS and the `SERT_RAY_QUERY` variants of Identify, Trace and Refine. It replaces the native sun-visibility path.
 
 ## 1.0.2 — 2026-10-17
 

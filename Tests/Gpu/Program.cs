@@ -22,6 +22,8 @@ static class Program
             foreach(string path in Directory.GetFiles(root,"*.hlsl"))
             {
                 string name=Path.GetFileNameWithoutExtension(path), profile=name=="Fullscreen"?"vs_5_0":name=="Guides"||name=="Atlas"||name=="Composite"?"ps_5_0":"cs_5_0";
+                // *RayQuery.hlsl are Vulkan-only SM 6.5 inline ray tracing variants; DX11 keeps the software traversal.
+                if(name.EndsWith("RayQuery",StringComparison.Ordinal))continue;
                 string entry=profile[0]=='v'?"__vertex_shader":profile[0]=='p'?"__pixel_shader":"__compute_shader";
                 var code=ShaderCache.Compile(path,entry,profile,root,game);
                 {

@@ -14,6 +14,43 @@ float3 thinTransmission(Material m,Triangle t,float2 bary){
     float3 tint=max(m.optical.rgb*m.color,0);tint=saturate(tint/max(max(tint.x,max(tint.y,tint.z)),1e-6))*saturate(texel.rgb);
     float opacity=saturate(m.optical.w*texel.a);return lerp(float3(1,1,1),GlassTransmission*tint,opacity);
 }
+#ifdef SERT_RAY_QUERY
+// Ray-query visibility with the software rules. An unknown candidate counts when it is nearer than the final
+// limit (the blocker once one is known), which is the order-independent form of the software test.
+ShadowResult traceVisibility(float3 o,float3 d,float maximum,bool nearest){
+    if(InstanceCount==0||dot(o,o)>256*256)return failure(2);
+    float horizon=sphereExit(o,d);bool unknown=maximum>horizon;maximum=min(maximum,horizon);
+    float distances[8];float3 normals[8],transmissions[8];uint layers=0;
+    bool opaque=false;float blocker=maximum,unknownAt=maximum+1;
+    RayDesc ray;ray.Origin=o;ray.Direction=d;ray.TMin=queryMinimum(o,d);ray.TMax=maximum;
+    RayQuery<RAY_FLAG_FORCE_NON_OPAQUE> q;q.TraceRayInline(SceneTlas,0,0xFF,ray);
+    [loop]while(q.Proceed()){
+        uint k=q.CandidateInstanceID();if(k>=InstanceCount){unknown=true;continue;}Instance inst=Instances[k];
+        if(q.CandidateType()!=CANDIDATE_NON_OPAQUE_TRIANGLE){float nt;if(box(o,d,inst.lo,inst.hi,maximum,nt))unknownAt=min(unknownAt,nt);continue;}
+        uint ti=InstanceTriangleBase[k]+q.CandidatePrimitiveIndex();if(ti>=TriangleCount){unknown=true;continue;}
+        Triangle tri=Triangles[ti];float distance=q.CandidateTriangleRayT();float2 bary=q.CandidateTriangleBarycentrics();
+        uint mi=inst.materialBase+tri.material;if(mi>=MaterialCount){unknownAt=min(unknownAt,distance);continue;}Material mat=Materials[mi];
+        if((mat.flags&8)!=0 && (mat.flags&(1|32))!=0){unknownAt=min(unknownAt,distance);continue;}
+        if((mat.flags&1)!=0 && Extensions.SampleLevel(LinearWrap,float3(textureUv(tri,bary),mat.atlasIndex),0).z<.5)continue;
+        if((mat.flags&32)!=0){
+            float3 a=mul(float4(Vertices[tri.a].p,1),inst.world).xyz,b=mul(float4(Vertices[tri.b].p,1),inst.world).xyz,c=mul(float4(Vertices[tri.c].p,1),inst.world).xyz;
+            float3 gn=normalize(cross(b-a,c-a));if((mat.flags&64)!=0&&dot(gn,d)>=0)continue;float3 tr=thinTransmission(mat,tri,bary);bool duplicate=false;
+            [loop]for(uint j=0;j<8;j++)if(j<layers && abs(distances[j]-distance)<=max(1e-5,rayError(o+d*distance)*2) && abs(dot(normals[j],gn))>.999){transmissions[j]=min(transmissions[j],tr);duplicate=true;}
+            if(!duplicate){if(layers==8)unknown=true;else{distances[layers]=distance;normals[layers]=gn;transmissions[layers]=tr;layers++;}}
+            continue;
+        }
+        if((mat.flags&(2|16))!=0){unknownAt=min(unknownAt,distance);continue;}
+        opaque=true;blocker=min(blocker,distance);q.CommitNonOpaqueTriangleHit();
+        if(!nearest){q.Abort();ShadowResult result=(ShadowResult)0;result.status=1;result.blocker=distance;result.quality=1;return result;}
+    }
+    unknown=unknown||unknownAt<(opaque?blocker:maximum);
+    if(opaque){ShadowResult result=(ShadowResult)0;result.status=1;result.blocker=blocker;result.quality=unknown?1:2;return result;}
+    if(unknown)return failure(2);
+    ShadowResult result=(ShadowResult)0;result.transmission=1;result.blocker=maximum;result.quality=layers>0?2:0;
+    [loop]for(uint j=0;j<8;j++)if(j<layers){result.transmission*=transmissions[j];result.blocker=min(result.blocker,distances[j]);}
+    return result;
+}
+#else
 ShadowResult traceVisibility(float3 o,float3 d,float maximum,bool nearest){
     if(InstanceCount==0||dot(o,o)>256*256)return failure(2);
     float horizon=sphereExit(o,d);bool unknown=maximum>horizon;maximum=min(maximum,horizon);
@@ -63,6 +100,7 @@ ShadowResult traceVisibility(float3 o,float3 d,float maximum,bool nearest){
     [loop]for(uint j=0;j<8;j++)if(j<layers){result.transmission*=transmissions[j];result.blocker=min(result.blocker,distances[j]);}
     return result;
 }
+#endif
 ShadowResult shadow(float3 pos,float3 geometric,float error,float3 d,float distance,bool infinite,bool nearest,float endpointError){
     if((ShadowFlags&1)!=0){ShadowResult r=(ShadowResult)0;r.transmission=1;return r;}
     if(CollectStatistics!=0){uint unused;InterlockedAdd(Statistics[0],1,unused);}
