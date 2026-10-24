@@ -96,7 +96,7 @@ It records into SE-Vulkan's tenant compute session, which frame[7][1] carries (A
 
 Differences from DX11:
 
-- The session has no GPU timestamps yet. GPU time reads NaN and the adaptive budget holds its scale.
+- GPU time comes from the session's timestamps around the tenant list. Anomaly's completion callback passes the session to `Poll`, which reads `Timing` and feeds the refinement budget and the adaptive scale as on DX11. Far-sun time adds nothing yet.
 - Retirement needs no event query, because the renderer retires ids once the GPU is done with them.
 - Textures that update every frame (LCD render targets) bake into the atlas once per version.
 - The far-sun product is not published yet, so local softness stays native hybrid.

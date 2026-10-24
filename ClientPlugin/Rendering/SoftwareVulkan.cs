@@ -121,12 +121,24 @@ public sealed class SoftwareVulkan : IRayTracingBackend, ISoftwareDx11Session
     public string Status { get; private set; } = "idle";
     public long SceneBytes { get; private set; }
     public long ReconstructionBytes { get; private set; }
-    // The tenant session has no GPU timestamps yet; the adaptive budget holds its current scale.
-    public double GpuMilliseconds => double.NaN;
+    // GPU time of the tenant list, from the session's timestamps. Anomaly polls completion each Vulkan frame with
+    // the session as context, as DX11 polls its timer query with the immediate context.
+    double gpuMilliseconds = double.NaN; long measurements; ulong lastMeasurement;
+    public double GpuMilliseconds => gpuMilliseconds;
+    public long Measurements => measurements;
+    // The Vulkan far-sun product is not published, so its time adds nothing yet.
+    public double CombinedMilliseconds => gpuMilliseconds;
     public bool RefinementExhausted => refinementAllocation == 0 || refinementBudget.Multiplier == 0;
-    public void ObserveBudget(double target) { }
+    public bool RefinementThrottled => refinementBudget.Multiplier < 1;
+    public void ObserveBudget(double target) => refinementBudget.Observe(CombinedMilliseconds, target);
     public void ResetBudget() => refinementBudget.Reset();
-    public void Poll(object context, Action<double> measured) { }
+    public void Poll(object context, Action<double> measured)
+    {
+        if (session == null || !ReferenceEquals(context, session) || !session.TryGetValue("Timing", out var t) || !(t is Func<double[]> timing)) return;
+        var value = timing(); ulong count = (ulong)value[1];
+        if (count == lastMeasurement || double.IsNaN(value[0])) return;
+        lastMeasurement = count; gpuMilliseconds = value[0]; measurements++; measured?.Invoke(gpuMilliseconds);
+    }
     public void InvalidateHistory() { history = false; }
     public void SetShadowSettings(ShadowSettings value)
     {
@@ -138,9 +150,10 @@ public sealed class SoftwareVulkan : IRayTracingBackend, ISoftwareDx11Session
     {
         data.Backend = Name; data.Width = width; data.Height = height;
         data.FullWidth = fullWidth; data.FullHeight = fullHeight; data.History = history;
-        data.GpuMilliseconds = double.NaN; data.FarSunMilliseconds = double.NaN; data.FarSunCoverage = "native hybrid (Vulkan far-sun product pending)";
+        data.GpuMilliseconds = gpuMilliseconds; data.FarSunMilliseconds = double.NaN; data.FarSunCoverage = "native hybrid (Vulkan far-sun product pending)";
         data.RefinementRequested = shadowSettings.RefinementFraction; data.RefinementEffective = width == 0 ? 0 : Math.Min(refinementAllocation, refinementBudget.Capacity(width * height, shadowSettings.RefinementFraction)) / (float)(width * height);
-        data.RefinementReason = refinementBudget.Reason;
+        data.RefinementReason = refinementAllocation < Math.Floor(width * (double)height * shadowSettings.RefinementFraction) ? "reconstruction memory cap; " + refinementBudget.Reason : refinementBudget.Reason;
+        data.Measurements = measurements;
         data.SceneBytes = SceneBytes; data.ReconstructionBytes = ReconstructionBytes;
         data.LightCapacity = lightData?.Length ?? 0;
         data.AtlasTiles = atlasReady?.Length ?? 0;
@@ -232,7 +245,7 @@ public sealed class SoftwareVulkan : IRayTracingBackend, ISoftwareDx11Session
         if (!(session.TryGetValue("ApiVersion", out var version) && version is Func<int> v && v() == 1)) throw new InvalidOperationException("SE-Vulkan tenant session v1 required");
         createBuffer = (Func<long, ulong>)session["CreateBuffer"]; createImage = (Func<int, int, int, int, int, ulong>)session["CreateImage"];
         createCompute = (Func<byte[], string, ulong>)session["CreateCompute"]; createRaster = (Func<byte[], string, byte[], string, int[], ulong>)session["CreateRaster"];
-        destroy = (Action<ulong>)session["Destroy"]; record = (Action<byte[], byte[], byte[]>)session["Record"];
+        destroy = (Action<ulong>)session["Destroy"]; record = (Action<byte[], byte[], byte[]>)session["Record"]; lastMeasurement = 0;
         if (rayQuery)
         {
             if (!(session.TryGetValue("RayQuery", out var query) && query is Func<bool> q && q() && session.TryGetValue("CreateAccel", out var accel)))
@@ -632,7 +645,7 @@ public sealed class SoftwareVulkan : IRayTracingBackend, ISoftwareDx11Session
         Release(screenResources); Release(sceneResources); Release(rayResources); Release(shaders); compute.Clear();
         width = height = fullWidth = fullHeight = 0; signature = 0; history = false; previousCamera = null; initializedRoot = null;
         proxies = new ProxyCatalog(); SceneBytes = ReconstructionBytes = 0; lightData = null; atlasReady = null; refinementBudget.Reset();
-        session = null; record = null;
+        session = null; record = null; gpuMilliseconds = double.NaN;
     }
     public void Dispose() => Reset();
 }
