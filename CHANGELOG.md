@@ -1,6 +1,6 @@
 # SE-RT changelog
 
-## Unreleased
+## 1.1.0 — 2026-10-24
 
 - Add `SoftwareVulkan`: the software ray-tracing stack on Anomaly's Vulkan route, recorded into SE-Vulkan's tenant compute session. Vulkan selects it when hardware acceleration is off or the device lacks ray query.
 - Share the `Parameters` constants and allocation forecasts between the DX11 and Vulkan backends.
