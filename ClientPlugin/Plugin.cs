@@ -70,9 +70,9 @@ public class Plugin : IPlugin
         rayQuery = caps.RayQuery != 0;
         var decision = HardwareChoice.Select(Config.Current.HardwareAcceleration, AnomalyRenderer.Active, rayQuery, enabled: Config.Current.Enabled);
         hardwareStatus = decision.Status;
-        if (decision.Kind == BackendKind.SoftwareDx11 && decision.Trace)
+        if ((decision.Kind == BackendKind.SoftwareDx11 || decision.Kind == BackendKind.SoftwareVulkan) && decision.Trace)
         {
-            if (backend is HardwareVulkan) { backend.Dispose(); backend = null; }
+            if (backend is HardwareVulkan || (backend is SoftwareVulkan) != (decision.Kind == BackendKind.SoftwareVulkan)) { backend?.Dispose(); backend = null; }
             if (!host.Bound) BindRayDevice();
             return;
         }
@@ -96,7 +96,8 @@ public class Plugin : IPlugin
     }
     void BindRayDevice()
     {
-        if (!AnomalyRenderer.AllowDx11Device)
+        // DX11 tenants share the game's device; Vulkan tenants record into the renderer's tenant compute session.
+        if (!AnomalyRenderer.AllowDx11Device && AnomalyRenderer.Active != AnomalyRenderer.Vulkan)
         {
             Status = AnomalyRenderer.Decided
                 ? "DX11 ray backend closed (" + AnomalyRenderer.ActiveName + ")"
@@ -176,7 +177,9 @@ public class Plugin : IPlugin
                     Status = "native fallback: building scene acceleration"; return;
                 }
                 if (!Directory.Exists(Path.Combine(assetFolder, "Shaders"))) { Status = "native fallback: shader assets unavailable"; return; }
-                if (backend == null) backend = SoftwareBackend.TryCreate(host, () => assetFolder);
+                bool vulkan = frame[7] is object[] devices && devices.Length > 0 && "vulkan".Equals(devices[0]);
+                if (backend != null && (backend is SoftwareVulkan) != vulkan) { backend.Dispose(); backend = null; }
+                if (backend == null) backend = vulkan ? new SoftwareVulkan(host, () => assetFolder) : SoftwareBackend.TryCreate(host, () => assetFolder);
                 if (backend == null) { Status = "native fallback: DX11 ray backend unavailable"; return; }
                 backend.SetShadowSettings(config.Shadows);
                 if (lastExposure != config.StorageExposure) { backend.InvalidateHistory(); lastExposure = config.StorageExposure; }

@@ -17,26 +17,6 @@ using Vector4 = System.Numerics.Vector4;
 
 namespace SERT.Rendering;
 
-[StructLayout(LayoutKind.Sequential, Pack = 4)]
-internal struct Parameters
-{
-    public uint FullWidth, FullHeight, Width, Height;
-    public uint Vertices, Triangles, Instances, Nodes;
-    public uint Lights, Materials, Tlas, Frame;
-    public Vector4 SunDirection, SunColor, Sky;
-    public Matrix4x4 PreviousViewProjection;
-    public Vector4 CameraDelta;
-    public uint History, Pass, TreeLeaves, Poses;
-    public float Exposure, Primary, Diffuse, Specular;
-    public uint CollectStatistics, ShadowFlags;
-    public float ShadowBias;
-    public uint ShadowDebugView;
-    public float LampRadius, SolarRadius, GlassTransmission, RefinementFraction;
-    public uint BiasMode, SamplingMode, SamplingSeed, FarSunValid;
-    public Matrix4x4 FarSunMatrix;
-    public uint RefinementCapacity, RefinementPixels, QualityPadding0, QualityPadding1;
-}
-
 public sealed class SoftwareDx11 : IRayTracingBackend, ISoftwareDx11Session
 {
     readonly AnomalyHost host;
@@ -260,21 +240,9 @@ public sealed class SoftwareDx11 : IRayTracingBackend, ISoftwareDx11Session
     }
 
     static void MyUpload(DeviceContext rc, Texture2D texture, int slice, IntPtr data) => rc.UpdateSubresource(new DataBox(data, 64, 1024), texture, slice);
-    static long BufferBytes(int count,int stride) => (long)Math.Max(1,count)*stride;
-    public static long SceneForecast(SceneGeometry scene,int tiles,int lightCount,int refitEntries,int skinnedCount,bool farSun)
-    {
-        int leaves=1;while(leaves<lightCount)leaves=checked(leaves*2);
-        return checked(BufferBytes(scene.Vertices.Length,32)+BufferBytes(scene.Triangles.Length,16)+BufferBytes(scene.Nodes.Length,32)+
-            BufferBytes(scene.Instances.Length,176)+BufferBytes(scene.Materials.Length,96)+BufferBytes(scene.Sources.Length,80)+BufferBytes(scene.Poses.Length,64)+
-            BufferBytes(scene.Vertices.Length,4)+Math.Max(1,tiles)*65536L+BufferBytes(lightCount,80)+leaves*8L+32+
-            BufferBytes(skinnedCount,4)+refitEntries*4L+8192+Marshal.SizeOf<Parameters>()+(farSun?2048L*2048*4+80:0));
-    }
-    public static long ScreenForecast(int pixels, int capacity) => checked((long)pixels * 500 + Math.Max(1, capacity) * (2L * Marshal.SizeOf<RefinementSample>() + 8) + 4);
-    static int PoolCapacity(int pixels, float fraction)
-    {
-        long available = Budget.ReconstructionBytes - (long)pixels * 500 - 4;
-        return Math.Max(0, (int)Math.Min(Math.Floor(pixels * (double)fraction), Math.Max(0, available / (2L * Marshal.SizeOf<RefinementSample>() + 8))));
-    }
+    public static long SceneForecast(SceneGeometry scene,int tiles,int lightCount,int refitEntries,int skinnedCount,bool farSun) => SoftwareForecast.Scene(scene,tiles,lightCount,refitEntries,skinnedCount,farSun);
+    public static long ScreenForecast(int pixels, int capacity) => SoftwareForecast.Screen(pixels, capacity);
+    static int PoolCapacity(int pixels, float fraction) => SoftwareForecast.PoolCapacity(pixels, fraction);
     void BuildScreen(int fw, int fh, float scale)
     {
         Release(screenResources); history = false; fullWidth = fw; fullHeight = fh;

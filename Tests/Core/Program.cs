@@ -135,11 +135,11 @@ static class Program
         var onDx = HardwareChoice.Select(true, HardwareChoice.DirectX11, true);
         Check(onDx.Trace && onDx.Kind == BackendKind.SoftwareDx11 && onDx.Status.Contains("waits for the Vulkan"), "DX11 keeps the saved option on the software tracer");
         var offVk = HardwareChoice.Select(false, HardwareChoice.Vulkan, true);
-        Check(!offVk.Trace, "Vulkan with the option off does not trace");
+        Check(offVk.Trace && offVk.Kind == BackendKind.SoftwareVulkan, "Vulkan with the option off traces on the software Vulkan session");
         var pending = HardwareChoice.Select(false, HardwareChoice.Pending, true);
         Check(!pending.Trace, "a pending route does not trace");
         var missing = HardwareChoice.Select(true, HardwareChoice.Vulkan, false);
-        Check(!missing.Trace && missing.Kind == BackendKind.HardwareVulkan && missing.Status.Contains("missing"), "Vulkan without ray query names the missing API");
+        Check(missing.Trace && missing.Kind == BackendKind.SoftwareVulkan && missing.Status.Contains("missing"), "Vulkan without ray query falls back to software Vulkan and names the missing API");
         var hardware = HardwareChoice.Select(true, HardwareChoice.Vulkan, true);
         Check(hardware.Trace && hardware.Kind == BackendKind.HardwareVulkan, "Vulkan with ray query selects the hardware session");
         var pendingOn = HardwareChoice.Select(true, HardwareChoice.Pending, true);
@@ -147,5 +147,6 @@ static class Program
         Check(!BackendCapabilities.Available(BackendKind.HardwareVulkan, false, HardwareChoice.Vulkan, true), "hardware stays unavailable while the option is off");
         Check(BackendCapabilities.Available(BackendKind.HardwareVulkan, true, HardwareChoice.Vulkan, true), "hardware is available only for the armed Vulkan ray-query case");
         Check(BackendCapabilities.Available(BackendKind.SoftwareDx11, false, HardwareChoice.DirectX11, false), "software remains available on DX11");
+        Check(BackendCapabilities.Available(BackendKind.SoftwareVulkan, false, HardwareChoice.Vulkan, false), "software is available on Vulkan without hardware tracing");
     }
 }

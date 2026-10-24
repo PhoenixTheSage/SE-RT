@@ -29,7 +29,7 @@ public interface ISoftwareDx11Session
     void FillDiagnostics(RendererDiagnostics data);
 }
 
-public enum BackendKind { SoftwareDx11, HardwareDxr, HardwareVulkan }
+public enum BackendKind { SoftwareDx11, HardwareDxr, HardwareVulkan, SoftwareVulkan }
 
 public readonly struct HardwareDecision
 {
@@ -59,12 +59,13 @@ public static class HardwareChoice
             return new HardwareDecision(true, BackendKind.SoftwareDx11, option
                 ? "software DX11; hardware acceleration waits for the Vulkan renderer"
                 : "software DX11");
-        if (route != Vulkan || !option)
-            return new HardwareDecision(false, BackendKind.HardwareVulkan, route == Pending
-                ? "waiting for Anomaly renderer route"
-                : "hardware acceleration off");
+        if (route != Vulkan)
+            return new HardwareDecision(false, BackendKind.HardwareVulkan, "waiting for Anomaly renderer route");
+        // The software stack runs on the Vulkan tenant compute session when hardware tracing is off or unavailable.
+        if (!option)
+            return new HardwareDecision(true, BackendKind.SoftwareVulkan, "software Vulkan");
         if (!rayQuery)
-            return new HardwareDecision(false, BackendKind.HardwareVulkan, "hardware acceleration missing ray query");
+            return new HardwareDecision(true, BackendKind.SoftwareVulkan, "software Vulkan; hardware acceleration missing ray query");
         return new HardwareDecision(true, BackendKind.HardwareVulkan, "hardware ray query");
     }
 }

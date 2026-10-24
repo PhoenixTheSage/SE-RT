@@ -4,6 +4,7 @@
     <Compile Include="../../ClientPlugin/Core/*.cs" Link="Core/%(Filename)%(Extension)"/>
     <Compile Include="../../ClientPlugin/Rendering/*.cs" Link="Rendering/%(Filename)%(Extension)"/>
     <Compile Include="../../ClientPlugin/Integration/AnomalyHost.cs" Link="AnomalyHost.cs"/>
+    <Compile Include="../../ClientPlugin/Integration/VulkanRayApi.cs" Link="VulkanRayApi.cs"/>
     <Reference Include="System.Numerics"/>
     <Reference Include="SharpDX"><HintPath>$(Bin64Dir)SharpDX.dll</HintPath></Reference>
     <Reference Include="SharpDX.Direct3D11"><HintPath>$(Bin64Dir)SharpDX.Direct3D11.dll</HintPath></Reference>

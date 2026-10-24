@@ -85,3 +85,25 @@ Validation: both runtimes pass 6,060 core numerical/physical-origin/optical-revi
 
 `IRayTracingBackend` is the renderer adapter boundary. The numerical scene and light structures have no game dependencies. The DX11 path stays SM5 software traversal. `HardwareChoice` keeps that path when the operational renderer is DX11, including when the saved hardware option is on. A Vulkan session traces only when that option is on and `sevk_get_ray_capabilities` reports ray query. The trace is a ray-query compute pass on the renderer's own device, built from resident world meshes, and it is not the software temporal stack or the Anomaly guest bus. No second Vulkan device is opened. DXR remains unavailable.
 
+## Software stack on Vulkan (SoftwareVulkan)
+
+On Anomaly's Vulkan route, `HardwareChoice` selects `SoftwareVulkan` when hardware acceleration is off, or when the device lacks ray query. That status names the missing ray query. `SoftwareVulkan` runs the DX11 stack unchanged:
+
+- the same shaders (compiled to SPIR-V by `RayScene.CompileShader`);
+- the same resources, pass order and allocation forecasts (`SoftwareForecast`, shared with DX11).
+
+It records into SE-Vulkan's tenant compute session, which frame[7][1] carries (Anomaly `Docs/RayTracing.md`, Vulkan route). DX11's sticky shader-resource, sampler and constant state is kept per stage and copied into each dispatch or draw. As on DX11, binding a resource as an output unbinds its shader views on that stage. Renderer images and material textures are renderer ids. A failed frame records nothing.
+
+Differences from DX11:
+
+- The session has no GPU timestamps yet. GPU time reads NaN and the adaptive budget holds its scale.
+- Retirement needs no event query, because the renderer retires ids once the GPU is done with them.
+- Textures that update every frame (LCD render targets) bake into the atlas once per version.
+- The far-sun product is not published yet, so local softness stays native hybrid.
+
+Validation (SE-Vulkan test projects):
+
+- `--sert-vulkan-only` (GuestDepthGpuTests, actual Anomaly core) compiles every shader, builds every pipeline and renders the delivered frames with history.
+- `--sert-scene-only` (SceneSubmissionGpuTests) composes a real GBuffer scene: the ray-coverage view traces 394 of 400 armor pixels. The 6 misses sit on shared triangle edges.
+
+Both lanes have zero validation errors.
